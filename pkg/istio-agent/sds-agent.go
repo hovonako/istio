@@ -29,6 +29,7 @@ import (
 	caClientInterface "istio.io/istio/security/pkg/nodeagent/caclient/interface"
 	citadel "istio.io/istio/security/pkg/nodeagent/caclient/providers/citadel"
 	gca "istio.io/istio/security/pkg/nodeagent/caclient/providers/google"
+	keyfactor "istio.io/istio/security/pkg/nodeagent/caclient/providers/keyfactor"
 	"istio.io/istio/security/pkg/nodeagent/plugin/providers/google/stsclient"
 
 	"istio.io/istio/security/pkg/nodeagent/cache"
@@ -127,6 +128,8 @@ const (
 	initialBackoffInMilliSec = "INITIAL_BACKOFF_MSEC"
 
 	pkcs8Key = "PKCS8_KEY"
+
+	keyfactorCAName = "KeyfactorCA"
 )
 
 var (
@@ -182,6 +185,18 @@ type SDSAgent struct {
 
 	// CAEndpoint is the CA endpoint to which node agent sends CSR request.
 	CAEndpoint string
+
+	// PodNamespace
+	PodNamespace string
+
+	// PodName
+	PodName string
+
+	// PodID
+	PodIP string
+
+	// ClusterID
+	ClusterID string
 }
 
 // NewSDSAgent wraps the logic for a local SDS. It will check if the JWT token required for local SDS is
@@ -192,9 +207,14 @@ type SDSAgent struct {
 //
 // If node agent and JWT are mounted: it indicates user injected a config using hostPath, and will be used.
 //
-func NewSDSAgent(discAddr string, tlsRequired bool, pilotCertProvider, jwtPath, outputKeyCertToDir string) *SDSAgent {
+func NewSDSAgent(discAddr string, tlsRequired bool, pilotCertProvider, jwtPath, outputKeyCertToDir string,
+	clusterID string, podNamespace string, podName string, podIP string) *SDSAgent {
 	ac := &SDSAgent{}
 
+	ac.ClusterID = clusterID
+	ac.PodNamespace = podNamespace
+	ac.PodName = podName
+	ac.PodIP = podIP
 	ac.PilotCertProvider = pilotCertProvider
 	ac.OutputKeyCertToDir = outputKeyCertToDir
 
@@ -331,6 +351,27 @@ func (conf *SDSAgent) newSecretCache(serverOptions sds.Options) (workloadSecretC
 		// used.
 		caClient, err = gca.NewGoogleCAClient(serverOptions.CAEndpoint, true)
 		serverOptions.PluginNames = []string{"GoogleTokenExchange"}
+	} else if serverOptions.CAProviderName == keyfactorCAName {
+		// Assume CA from Keyfactor is mounting /etc/certs
+		rootCert, err := ioutil.ReadFile(cache.DefaultRootCertFilePath)
+		if err == nil {
+			log.Errorf("KeyfactorCA setup: missing root-cert.pem in ./etc/certs. Please create secret `cacerts` included root-cert.pem", err)
+		}
+
+		log.Infof("root-cert.pem: %v", string(rootCert))
+
+		conf.RootCert = rootCert
+		keyfactorMetadata := &keyfactor.KeyfactorCAClientMetadata{
+			TrustDomain:  trustDomainEnv,
+			ClusterID:    conf.ClusterID,
+			PodNamespace: conf.PodNamespace,
+			PodName:      conf.PodName,
+			PodIP:        conf.PodIP,
+		}
+		caClient, err = keyfactor.NewKeyFactorCAClient(serverOptions.CAEndpoint, conf.RequireCerts, rootCert, keyfactorMetadata)
+		if err != nil {
+			log.Fatalf("Cannot create new KeyfactorCA Provider. err: %v", err)
+		}
 	} else {
 		// Determine the default CA.
 		// If /etc/certs exists - it means Citadel is used (possibly in a mode to only provision the root-cert, not keys)
@@ -425,6 +466,7 @@ func (conf *SDSAgent) newSecretCache(serverOptions sds.Options) (workloadSecretC
 		// Will use TLS unless the reserved 15010 port is used ( istiod on an ipsec/secure VPC)
 		// rootCert may be nil - in which case the system roots are used, and the CA is expected to have public key
 		// Otherwise assume the injection has mounted /etc/certs/root-cert.pem
+
 		caClient, err = citadel.NewCitadelClient(serverOptions.CAEndpoint, tls, rootCert)
 		if err == nil {
 			conf.CitadelClient = caClient

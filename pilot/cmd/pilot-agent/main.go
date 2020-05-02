@@ -89,6 +89,7 @@ var (
 	podNameVar           = env.RegisterStringVar("POD_NAME", "", "")
 	podNamespaceVar      = env.RegisterStringVar("POD_NAMESPACE", "", "")
 	istioNamespaceVar    = env.RegisterStringVar("ISTIO_NAMESPACE", "", "")
+	clusterIDVar         = env.RegisterStringVar("CLUSTER_ID", "", "")
 	kubeAppProberNameVar = env.RegisterStringVar(status.KubeAppProberEnvName, "", "")
 
 	pilotCertProvider = env.RegisterStringVar("PILOT_CERT_PROVIDER", "istiod",
@@ -132,6 +133,9 @@ var (
 			podName := podNameVar.Get()
 			podNamespace := podNamespaceVar.Get()
 			podIP := net.ParseIP(instanceIPVar.Get()) // protobuf encoding of IP_ADDRESS type
+
+			role.ClusterID = clusterIDVar.Get()
+			log.Infof("ClusterID: %s", role.ClusterID)
 
 			log.Infof("Version %s", version.Info.String())
 			role.Type = model.SidecarProxy
@@ -211,7 +215,7 @@ var (
 			}
 
 			sa := istio_agent.NewSDSAgent(proxyConfig.DiscoveryAddress, proxyConfig.ControlPlaneAuthPolicy == meshconfig.AuthenticationPolicy_MUTUAL_TLS,
-				pilotCertProvider, jwtPath, outputKeyCertToDir)
+				pilotCertProvider, jwtPath, outputKeyCertToDir, role.ClusterID, podNamespace, podName, podIP.String())
 
 			// Connection to Istiod secure port
 			if sa.RequireCerts {
