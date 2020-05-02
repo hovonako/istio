@@ -538,7 +538,32 @@ message GlobalConfig {
 
   // Controls whether one central istiod is enabled.
   google.protobuf.BoolValue centralIstiod = 62;
-  // The next available key is 63
+  
+
+  // The name of the CA Provider for customize provider to sign CSR. Eg: Citadel, GoogleCA, KeyfactorCA
+  string caProvider = 63;
+
+  KeyfactorCAConfiguration keyfactor = 64;
+
+  // The next available key is 65
+}
+
+// Configuration for External KeyfactorCA Provider server.
+message KeyfactorCAConfiguration {
+  // The name of certificate authorization on KeyfactorCA Server
+  string ca = 1;
+
+  // The username/password encode
+  string  authToken = 2;
+
+  // The API path for enroll certificate
+  string  enrollPath = 3;
+
+  // The name of certificate template. Default: Istio
+  string  caTemplate = 4;
+
+  // The API_KEY from Api setting of Keyfactor Cloud
+  string  appKey = 5;
 }
 
 // Configuration for Security Token Service (STS) server.

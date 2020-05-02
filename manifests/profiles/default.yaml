@@ -235,6 +235,15 @@ spec:
         level: "default:info"
       logAsJson: false
       pilotCertProvider: istiod
+      caAddress: ""
+      # Supported: Citadel, GoogleCA, KeyfactorCA
+      caProvider: "Citadel"
+      keyfactor:
+        ca: ""
+        authToken: ""
+        enrollPath: ""
+        caTemplate: "Istio"
+        appKey: ""
       jwtPolicy: third-party-jwt
       proxy:
         image: proxyv2

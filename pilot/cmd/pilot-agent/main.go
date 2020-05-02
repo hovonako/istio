@@ -134,6 +134,9 @@ var (
 			podNamespace := podNamespaceVar.Get()
 			podIP := net.ParseIP(instanceIPVar.Get()) // protobuf encoding of IP_ADDRESS type
 
+			role.ClusterID = clusterIDVar.Get()
+			log.Infof("ClusterID: %s", role.ClusterID)
+
 			log.Infof("Version %s", version.Info.String())
 			role.Type = model.SidecarProxy
 			if len(args) > 0 {
@@ -211,7 +214,7 @@ var (
 				log.Info("Using existing certs")
 			}
 			sa := istio_agent.NewSDSAgent(proxyConfig.DiscoveryAddress, proxyConfig.ControlPlaneAuthPolicy == meshconfig.AuthenticationPolicy_MUTUAL_TLS,
-				pilotCertProvider, jwtPath, outputKeyCertToDir, clusterIDVar.Get())
+				pilotCertProvider, jwtPath, outputKeyCertToDir, role.ClusterID, podNamespace, podName, podIP.String())
 
 			// Connection to Istiod secure port
 			if sa.RequireCerts {
