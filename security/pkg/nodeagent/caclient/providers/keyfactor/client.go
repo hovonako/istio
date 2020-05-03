@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	caClientInterface "istio.io/istio/security/pkg/nodeagent/caclient/interface"
@@ -29,11 +30,11 @@ import (
 
 var (
 	keyFactorCAClientLog    = log.RegisterScope("keyfactor", "KeyFactor CA client debugging", 0)
-	certificateAuthorityVar = env.RegisterStringVar("KEYFACTOR_CA", "", "Name of certificate").Get()
-	authTokenVar            = env.RegisterStringVar("KEYFACTOR_AUTH_TOKEN", "", "Auth token of keyfactor").Get()
-	enrollCSRPathVar        = env.RegisterStringVar("KEYFACTOR_ENROLL_PATH", "/KeyfactorAPI/Enrollment/CSR", "API path of enroll certificate").Get()
-	certificateTemplateVar  = env.RegisterStringVar("KEYFACTOR_CA_TEMPLATE", "Istio", "Keyfactor certificate template").Get()
-	appKeyVar               = env.RegisterStringVar("KEYFACTOR_APPKEY", "", "KeyFactor Api Key").Get()
+	certificateAuthorityENV = env.RegisterStringVar("KEYFACTOR_CA", "", "Name of certificate")
+	authTokenENV            = env.RegisterStringVar("KEYFACTOR_AUTH_TOKEN", "", "Auth token of keyfactor")
+	enrollCSRPathENV        = env.RegisterStringVar("KEYFACTOR_ENROLL_PATH", "/KeyfactorAPI/Enrollment/CSR", "API path of enroll certificate")
+	certificateTemplateENV  = env.RegisterStringVar("KEYFACTOR_CA_TEMPLATE", "Istio", "Keyfactor certificate template")
+	appKeyENV               = env.RegisterStringVar("KEYFACTOR_APPKEY", "", "KeyFactor Api Key")
 )
 
 // KeyfactorCAClientMetadata struct to carry metadata of Keyfactor Client
@@ -64,8 +65,8 @@ type san struct {
 type metadata struct {
 	Cluster      string `json:"Cluster"`
 	Service      string `json:"Service"`
+	PodName      string `json:"PodName"`
 	PodNamespace string `json:"PodNamespace"`
-	TrustDomain  string `json:"TrustDomain"`
 }
 
 type keyfactorRequestPayload struct {
@@ -95,11 +96,23 @@ type keyfactorResponse struct {
 
 // NewKeyFactorCAClient create a CA client for KeyFactor CA.
 func NewKeyFactorCAClient(endpoint string, tls bool, rootCert []byte, metadata *KeyfactorCAClientMetadata) (caClientInterface.Client, error) {
+
+	if certificateAuthorityENV.Get() == "" {
+		return nil, fmt.Errorf("Missing KEYFACTOR_CA env, config at global.keyfactor.ca")
+	}
+
+	if authTokenENV.Get() == "" {
+		return nil, fmt.Errorf("Missing KEYFACTOR_AUTH_TOKEN, config at global.keyfactor.authToken")
+	}
+
+	if appKeyENV.Get() == "" {
+		return nil, fmt.Errorf("Missing KEYFACTOR_APPKEY, config at global.keyfactor.appKey")
+	}
+
 	c := &keyFactorCAClient{
 		caEndpoint:   endpoint,
 		enableTLS:    tls,
 		podName:      metadata.PodName,
-		trustDomain:  metadata.TrustDomain,
 		clusterID:    metadata.ClusterID,
 		podNamespace: metadata.PodNamespace,
 		podIP:        metadata.PodIP,
@@ -122,11 +135,17 @@ func NewKeyFactorCAClient(endpoint string, tls bool, rootCert []byte, metadata *
 func (cl *keyFactorCAClient) CSRSign(ctx context.Context, reqID string, csrPEM []byte, subjectID string,
 	certValidTTLInSec int64) ([]string /*PEM-encoded certificate chain*/, error) {
 
+	serviceName := cl.podName
+
+	if splitPodName := strings.Split(cl.podName, "-"); len(splitPodName) > 1 {
+		serviceName = splitPodName[0]
+	}
+
 	bytesRepresentation, err := json.Marshal(keyfactorRequestPayload{
 		CSR:                  string(csrPEM),
-		CertificateAuthority: certificateAuthorityVar,
+		CertificateAuthority: certificateAuthorityENV.Get(),
 		IncludeChain:         true,
-		Template:             certificateTemplateVar,
+		Template:             certificateTemplateENV.Get(),
 		TimeStamp:            time.Now().Format(time.RFC3339),
 		SANs: san{
 			DNS: []string{cl.trustDomain},
@@ -134,20 +153,23 @@ func (cl *keyFactorCAClient) CSRSign(ctx context.Context, reqID string, csrPEM [
 		},
 		Metadata: metadata{
 			Cluster:      cl.clusterID,
-			Service:      cl.podName,
+			Service:      serviceName,
+			PodName:      cl.podName,
 			PodNamespace: cl.podNamespace,
 		},
 	})
 
-	requestCSR, err := http.NewRequest("POST", cl.caEndpoint+enrollCSRPathVar, bytes.NewBuffer(bytesRepresentation))
+	enrollCSRPath := enrollCSRPathENV.Get()
+
+	requestCSR, err := http.NewRequest("POST", cl.caEndpoint+enrollCSRPath, bytes.NewBuffer(bytesRepresentation))
 
 	if err != nil {
-		return nil, fmt.Errorf("Cannot create request with url: %v", cl.caEndpoint+enrollCSRPathVar)
+		return nil, fmt.Errorf("Cannot create request with url: %v", cl.caEndpoint+enrollCSRPath)
 	}
 
-	requestCSR.Header.Set("authorization", authTokenVar)
+	requestCSR.Header.Set("authorization", authTokenENV.Get())
 	requestCSR.Header.Set("x-keyfactor-requested-with", "APIClient")
-	requestCSR.Header.Set("x-Keyfactor-appKey", appKeyVar)
+	requestCSR.Header.Set("x-Keyfactor-appKey", appKeyENV.Get())
 	requestCSR.Header.Set("x-certificateformat", "PEM")
 	requestCSR.Header.Set("Content-Type", "application/json")
 
