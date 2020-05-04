@@ -137,9 +137,14 @@ func (cl *keyFactorCAClient) CSRSign(ctx context.Context, reqID string, csrPEM [
 
 	serviceName := cl.podName
 
-	if splitPodName := strings.Split(cl.podName, "-"); len(splitPodName) > 1 {
-		serviceName = splitPodName[0]
+	if splitPodName := strings.Split(cl.podName, "-"); len(splitPodName) > 2 {
+
+		// example: service-name-A-v1-roiwe0239-24jfef9 => service-name-A-v1
+		arrayOfServiceNames := splitPodName[0 : len(splitPodName)-2]
+		serviceName = strings.Join(arrayOfServiceNames, "-")
 	}
+
+	keyFactorCAClientLog.Infof("- Start sign CSR for service: (%s), in namespace: (%s)", serviceName, cl.podNamespace)
 
 	bytesRepresentation, err := json.Marshal(keyfactorRequestPayload{
 		CSR:                  string(csrPEM),
@@ -198,6 +203,7 @@ func (cl *keyFactorCAClient) CSRSign(ctx context.Context, reqID string, csrPEM [
 }
 
 func getCertFromResponse(jsonResponse *keyfactorResponse) []string {
+
 	certChains := []string{}
 
 	template := "-----BEGIN CERTIFICATE-----\n%s\n-----END CERTIFICATE-----\n"
@@ -205,6 +211,8 @@ func getCertFromResponse(jsonResponse *keyfactorResponse) []string {
 	for _, i := range jsonResponse.CertificateInformation.Certificates {
 		certChains = append(certChains, fmt.Sprintf(template, i))
 	}
+
+	keyFactorCAClientLog.Infof("- Keyfactor response %s certificates in certchain.", len(certChains))
 
 	return certChains
 }
