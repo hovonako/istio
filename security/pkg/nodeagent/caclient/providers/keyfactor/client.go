@@ -17,15 +17,18 @@ package caclient
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	caClientInterface "istio.io/istio/security/pkg/nodeagent/caclient/interface"
 	"istio.io/pkg/env"
 	"istio.io/pkg/log"
+
+	caClientInterface "istio.io/istio/security/pkg/nodeagent/caclient/interface"
 )
 
 var (
@@ -95,7 +98,7 @@ type keyfactorResponse struct {
 }
 
 // NewKeyFactorCAClient create a CA client for KeyFactor CA.
-func NewKeyFactorCAClient(endpoint string, tls bool, rootCert []byte, metadata *KeyfactorCAClientMetadata) (caClientInterface.Client, error) {
+func NewKeyFactorCAClient(endpoint string, enableTLS bool, rootCert []byte, metadata *KeyfactorCAClientMetadata) (caClientInterface.Client, error) {
 
 	if certificateAuthorityENV.Get() == "" {
 		return nil, fmt.Errorf("Missing KEYFACTOR_CA env, config at global.keyfactor.ca")
@@ -111,20 +114,55 @@ func NewKeyFactorCAClient(endpoint string, tls bool, rootCert []byte, metadata *
 
 	c := &keyFactorCAClient{
 		caEndpoint:   endpoint,
-		enableTLS:    tls,
+		enableTLS:    enableTLS,
 		podName:      metadata.PodName,
 		clusterID:    metadata.ClusterID,
 		podNamespace: metadata.PodNamespace,
 		podIP:        metadata.PodIP,
 	}
 
-	if !tls {
+	if !enableTLS {
+
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
 		c.client = &http.Client{
-			Timeout: time.Second * 10,
+			Transport: transport,
 		}
 	} else {
+
+		if rootCert == nil {
+			return nil, fmt.Errorf("Missing root-cert.pem with enableTLS = %v", enableTLS)
+		}
+		// Load the system default root certificates.
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			keyFactorCAClientLog.Errorf("could not get SystemCertPool: %v", err)
+			return nil, fmt.Errorf("could not get SystemCertPool: %v", err)
+		}
+
+		if pool == nil {
+			log.Info("system cert pool is nil, create a new cert pool")
+			pool = x509.NewCertPool()
+		}
+
+		if len(rootCert) > 0 {
+			ok := pool.AppendCertsFromPEM(rootCert)
+			if !ok {
+				return nil, fmt.Errorf("Invalid root-cert.pem: %v", string(rootCert))
+			}
+		}
+
+		tlsConfig := &tls.Config{
+			RootCAs: pool,
+		}
+
+		transport := &http.Transport{TLSClientConfig: tlsConfig}
+
 		c.client = &http.Client{
-			Timeout: time.Second * 10,
+			Transport: transport,
 		}
 	}
 
@@ -212,7 +250,7 @@ func getCertFromResponse(jsonResponse *keyfactorResponse) []string {
 		certChains = append(certChains, fmt.Sprintf(template, i))
 	}
 
-	keyFactorCAClientLog.Infof("- Keyfactor response %s certificates in certchain.", len(certChains))
+	keyFactorCAClientLog.Infof("- Keyfactor response %v certificates in certchain.", len(certChains))
 
 	return certChains
 }
