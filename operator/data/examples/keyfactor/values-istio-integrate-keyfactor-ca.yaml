@@ -8,8 +8,6 @@ spec:
   profile: demo
   values:
     global:
-      hub: "hovonako"
-      tag: "hovonako"
       multiCluster:
         name: SingleKeyfactorCluster
       controlPlaneSecurityEnabled: true
