@@ -133,9 +133,6 @@ func NewKeyFactorCAClient(endpoint string, enableTLS bool, rootCert []byte, meta
 		}
 	} else {
 
-		if rootCert == nil {
-			return nil, fmt.Errorf("Missing root-cert.pem with enableTLS = %v", enableTLS)
-		}
 		// Load the system default root certificates.
 		pool, err := x509.SystemCertPool()
 		if err != nil {

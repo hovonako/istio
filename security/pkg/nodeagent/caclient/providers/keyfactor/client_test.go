@@ -157,7 +157,7 @@ func TestKeyfactorWithTLSEnabled(t *testing.T) {
 	}{
 		"Nil certificate": {
 			rootCert:    nil,
-			expectedErr: "Missing root-cert.pem with enableTLS = true",
+			expectedErr: "",
 		},
 		"Valid certificate": {
 			rootCert:    rootCertPEM,

@@ -211,14 +211,10 @@ type SDSAgent struct {
 //
 func NewSDSAgent(discAddr string, tlsRequired bool, pilotCertProvider, jwtPath, outputKeyCertToDir string,
 	clusterID string, podNamespace string, podName string, podIP string) *SDSAgent {
-	ac := &SDSAgent{}
+	a := &SDSAgent{}
 
-	ac.ClusterID = clusterID
-	ac.PodNamespace = podNamespace
-	ac.PodName = podName
-	ac.PodIP = podIP
-	ac.PilotCertProvider = pilotCertProvider
-	ac.OutputKeyCertToDir = outputKeyCertToDir
+	a.PilotCertProvider = pilotCertProvider
+	a.OutputKeyCertToDir = outputKeyCertToDir
 
 	_, discPort, err := net.SplitHostPort(discAddr)
 	if err != nil {
@@ -275,6 +271,9 @@ func NewSDSAgent(discAddr string, tlsRequired bool, pilotCertProvider, jwtPath, 
 	}
 
 	a.ClusterID = clusterID
+	a.PodNamespace = podNamespace
+	a.PodName = podName
+	a.PodIP = podIP
 
 	return a
 }
@@ -359,21 +358,25 @@ func (sa *SDSAgent) newSecretCache(serverOptions sds.Options) (workloadSecretCac
 	} else if serverOptions.CAProviderName == keyfactorCAName {
 		// Assume CA from Keyfactor is mounting /etc/certs
 		rootCert, err := ioutil.ReadFile(cache.DefaultRootCertFilePath)
-		if err == nil {
-			log.Errorf("KeyfactorCA setup: missing root-cert.pem in ./etc/certs. Please create secret `cacerts` included root-cert.pem", err)
+
+		if err != nil {
+			// We may not provide root cert, and can just use public system certificate pool
+			log.Infof("no certs found at %v, using system certs", cache.DefaultRootCertFilePath)
+		} else {
+			log.Infof("the CA cert of keyfactorCA is: %v", string(rootCert))
 		}
 
-		log.Infof("root-cert.pem: %v", string(rootCert))
+		sa.RootCert = rootCert
 
-		conf.RootCert = rootCert
 		keyfactorMetadata := &keyfactor.KeyfactorCAClientMetadata{
 			TrustDomain:  trustDomainEnv,
-			ClusterID:    conf.ClusterID,
-			PodNamespace: conf.PodNamespace,
-			PodName:      conf.PodName,
-			PodIP:        conf.PodIP,
+			ClusterID:    sa.ClusterID,
+			PodNamespace: sa.PodNamespace,
+			PodName:      sa.PodName,
+			PodIP:        sa.PodIP,
 		}
-		caClient, err = keyfactor.NewKeyFactorCAClient(serverOptions.CAEndpoint, conf.RequireCerts, rootCert, keyfactorMetadata)
+
+		caClient, err = keyfactor.NewKeyFactorCAClient(serverOptions.CAEndpoint, sa.RequireCerts, rootCert, keyfactorMetadata)
 		if err != nil {
 			log.Fatalf("Cannot create new KeyfactorCA Provider. err: %v", err)
 		}
