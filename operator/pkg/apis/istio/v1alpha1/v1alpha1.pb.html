@@ -2,7 +2,7 @@
 title: v1alpha1
 layout: protoc-gen-docs
 generator: protoc-gen-docs
-number_of_entries: 95
+number_of_entries: 96
 ---
 <h2 id="ArchConfig">ArchConfig</h2>
 <section>
@@ -1717,6 +1717,26 @@ No
 No
 </td>
 </tr>
+<tr id="GlobalConfig-caProvider">
+<td><code>caProvider</code></td>
+<td><code>string</code></td>
+<td>
+<p>The name of the CA Provider for customize provider to sign CSR. Eg: Citadel, GoogleCA, KeyfactorCA</p>
+
+</td>
+<td>
+No
+</td>
+</tr>
+<tr id="GlobalConfig-keyfactor">
+<td><code>keyfactor</code></td>
+<td><code><a href="#KeyfactorCAConfiguration">KeyfactorCAConfiguration</a></code></td>
+<td>
+</td>
+<td>
+No
+</td>
+</tr>
 <tr id="GlobalConfig-defaultNodeSelector" class="deprecated ">
 <td><code>defaultNodeSelector</code></td>
 <td><code><a href="#TypeMapStringInterface">TypeMapStringInterface</a></code></td>
@@ -1770,6 +1790,78 @@ No
 <p>Specifies the k8s priorityClassName for the istio control plane components.</p>
 
 <p>See https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/#priorityclass</p>
+
+</td>
+<td>
+No
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<h2 id="KeyfactorCAConfiguration">KeyfactorCAConfiguration</h2>
+<section>
+<p>Configuration for External KeyfactorCA Provider server.</p>
+
+<table class="message-fields">
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr id="KeyfactorCAConfiguration-ca">
+<td><code>ca</code></td>
+<td><code>string</code></td>
+<td>
+<p>The name of certificate authorization on KeyfactorCA Server</p>
+
+</td>
+<td>
+No
+</td>
+</tr>
+<tr id="KeyfactorCAConfiguration-authToken">
+<td><code>authToken</code></td>
+<td><code>string</code></td>
+<td>
+<p>The username/password encode</p>
+
+</td>
+<td>
+No
+</td>
+</tr>
+<tr id="KeyfactorCAConfiguration-enrollPath">
+<td><code>enrollPath</code></td>
+<td><code>string</code></td>
+<td>
+<p>The API path for enroll certificate</p>
+
+</td>
+<td>
+No
+</td>
+</tr>
+<tr id="KeyfactorCAConfiguration-caTemplate">
+<td><code>caTemplate</code></td>
+<td><code>string</code></td>
+<td>
+<p>The name of certificate template. Default: Istio</p>
+
+</td>
+<td>
+No
+</td>
+</tr>
+<tr id="KeyfactorCAConfiguration-appKey">
+<td><code>appKey</code></td>
+<td><code>string</code></td>
+<td>
+<p>The API_KEY from Api setting of Keyfactor Cloud</p>
 
 </td>
 <td>
