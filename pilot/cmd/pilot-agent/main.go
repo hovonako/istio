@@ -208,8 +208,16 @@ var (
 			} else {
 				log.Info("Using existing certs")
 			}
-			sa := istio_agent.NewSDSAgent(proxyConfig.DiscoveryAddress, proxyConfig.ControlPlaneAuthPolicy == meshconfig.AuthenticationPolicy_MUTUAL_TLS,
-				pilotCertProvider, jwtPath, outputKeyCertToDir, clusterIDVar.Get())
+
+			isEnabledMutualTLS := proxyConfig.ControlPlaneAuthPolicy == meshconfig.AuthenticationPolicy_MUTUAL_TLS
+			sdsMetadata := istio_agent.SDSAgentMetadata{
+				ClusterID:    clusterIDVar.Get(),
+				PodNamespace: podNamespace,
+				PodName:      podName,
+				PodIP:        podIP.String(),
+				TrustDomain:  trustDomain,
+			}
+			sa := istio_agent.NewSDSAgent(proxyConfig.DiscoveryAddress, isEnabledMutualTLS, pilotCertProvider, jwtPath, outputKeyCertToDir, sdsMetadata)
 
 			// Connection to Istiod secure port
 			if sa.RequireCerts {

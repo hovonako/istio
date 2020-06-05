@@ -1,0 +1,9 @@
+{
+    "caName": "testCaName",
+    "caTemplate": "",
+    "authToken": "testAuthToken",
+    "appKey": "testAppKey",
+    "metadata": {
+        "Cluster": "Cluster_Alias"
+    }
+}
