@@ -24,6 +24,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	. "github.com/onsi/gomega"
 )
 
 var (
@@ -658,6 +660,43 @@ func TestGetGeneralCertPoolAndVerifyPeerCert(t *testing.T) {
 			if err != nil {
 				t.Errorf("unexpected error: %s. Expected no error.", err)
 			}
+		})
+	}
+}
+
+func TestAddMappingFromPEM(t *testing.T) {
+
+	testCases := map[string]struct {
+		rootCertPEM    []byte
+		expectLenRoots int
+	}{
+		"Multi RootCAs": {
+			rootCertPEM:    append([]byte(validRootCert), validRootCert2...),
+			expectLenRoots: 2,
+		},
+		"Empty RootCAs": {
+			rootCertPEM:    []byte{},
+			expectLenRoots: 0,
+		},
+		"One RootCA": {
+			rootCertPEM:    []byte(validRootCert),
+			expectLenRoots: 1,
+		},
+		"Invalid RootCA": {
+			rootCertPEM:    append([]byte(validRootCert), []byte("ivaliddddd CErt")...),
+			expectLenRoots: 1,
+		},
+	}
+
+	for id, tc := range testCases {
+		t.Run(id, func(tsub *testing.T) {
+			g := NewWithT(tsub)
+			v := NewPeerCertVerifier()
+			v.AddMappingFromPEM("trust.local", tc.rootCertPEM)
+
+			g.Expect(v.certPools["trust.local"].Subjects()).To(HaveLen(tc.expectLenRoots))
+			g.Expect(v.generalCertPool.Subjects()).To(HaveLen(tc.expectLenRoots))
+
 		})
 	}
 }
