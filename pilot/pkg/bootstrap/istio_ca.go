@@ -34,6 +34,7 @@ import (
 	"istio.io/istio/pkg/spiffe"
 	"istio.io/istio/security/pkg/cmd"
 	"istio.io/istio/security/pkg/pki/ca"
+	customca "istio.io/istio/security/pkg/pki/custom"
 	caserver "istio.io/istio/security/pkg/server/ca"
 	"istio.io/istio/security/pkg/server/ca/authenticate"
 	"istio.io/pkg/env"
@@ -64,6 +65,8 @@ import (
 var (
 	// LocalCertDir replaces the "cert-chain", "signing-cert" and "signing-key" flags in citadel - Istio installer is
 	// requires a secret named "cacerts" with specific files inside.
+	// When Custom CA Addr is defined, LocalCertDir also contains 'custom-ca.crt', 'custom-ca.key' and 'root-cert.pem'
+	// to connect with Custom CA Server
 	LocalCertDir = env.RegisterStringVar("ROOT_CA_DIR", "./etc/cacerts",
 		"Location of a local or mounted CA root")
 
@@ -112,6 +115,18 @@ var (
 
 	caRSAKeySize = env.RegisterIntVar("CITADEL_SELF_SIGNED_CA_RSA_KEY_SIZE", 2048,
 		"Specify the RSA key size to use for self-signed Istio CA certificates.")
+
+	// When this env is defined, it's require 'custom-ca.crt','custom-ca.key' and 'root-cert.pem' defined within 'cacerts' k8s secret
+	// 'custom-ca.crt' and 'custom-ca.key' are used to secure connection between IstioD and Custom CA
+	// 'custom-ca.crt' and 'custom-ca.key' are configurable by CUSTOM_CERT_NAME, CUSTOM_KEY_NAME env
+	CaAddrENV = env.RegisterStringVar("CUSTOM_CA_ADDR", "",
+		"Custom CA address to sign Workload Certificate")
+	CustomCACertName = env.RegisterStringVar("CUSTOM_CA_CERT_NAME",
+		"custom-ca.crt", "File name of CustomCA's TLS client certificate")
+	CustomCAKeyName = env.RegisterStringVar("CUSTOM_CA_KEY_NAME",
+		"custom-ca.key", "File name of CustomCA's TLS client key")
+	CustomCARequestTimeoutENV = env.RegisterIntVar("CUSTOM_CA_KEY_NAME", 20,
+		"Timeout for forwarding CSR request to Custom CA Server (in second)")
 )
 
 type CAOptions struct {
@@ -182,6 +197,24 @@ func (s *Server) RunCA(grpc *grpc.Server, ca caserver.CertificateAuthority, opts
 		s.multicluster.GetRemoteKubeClient)
 	if startErr != nil {
 		log.Fatalf("failed to create istio ca server: %v", startErr)
+	}
+
+	if CaAddrENV.Get() != "" {
+		customCAClient, err := customca.NewCAClient(&customca.CAClientOpts{
+			CAAddr:         CaAddrENV.Get(),
+			KeyCertBundle:  s.CA.GetCAKeyCertBundle(),
+			ClientCertPath: path.Join(LocalCertDir.Get(), CustomCACertName.Get()),
+			ClientKeyPath:  path.Join(LocalCertDir.Get(), CustomCAKeyName.Get()),
+			RootCertPath:   path.Join(LocalCertDir.Get(), "root-cert.pem"),
+			RequestTimeout: CustomCARequestTimeoutENV.Get(),
+		})
+
+		if err != nil {
+			log.Fatalf("failed to create an CustomCAClient addr:%v - err: %v", CaAddrENV.Get(), err)
+			return
+		}
+
+		caServer.CustomCAClient = customCAClient
 	}
 
 	// TODO: if not set, parse Istiod's own token (if present) and get the issuer. The same issuer is used
