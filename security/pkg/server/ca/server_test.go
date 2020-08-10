@@ -29,11 +29,15 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"k8s.io/client-go/kubernetes/fake"
 
+	. "github.com/onsi/gomega"
 	pb "istio.io/api/security/v1alpha1"
 	"istio.io/istio/pkg/jwt"
 	"istio.io/istio/security/pkg/pki/ca"
 	mockca "istio.io/istio/security/pkg/pki/ca/mock"
+	customca "istio.io/istio/security/pkg/pki/custom"
+	"istio.io/istio/security/pkg/pki/custom/mock"
 	caerror "istio.io/istio/security/pkg/pki/error"
 	"istio.io/istio/security/pkg/pki/util"
 	mockutil "istio.io/istio/security/pkg/pki/util/mock"
@@ -479,5 +483,104 @@ func TestGetServerCertificate(t *testing.T) {
 		if len(cert.Certificate) != 4 {
 			t.Errorf("Unexpected number of certificates returned: %d (expected 4)", len(cert.Certificate))
 		}
+	}
+}
+
+func TestGetServerCertificateWhenCustomCAIsSetted(t *testing.T) {
+	cases := map[string]struct {
+		rootCert     string
+		serverCert   string
+		serverKey    string
+		clientCert   string
+		clientKey    string
+		workloadCert string
+	}{
+		"RSA cert": {
+			rootCert:     "../../pki/custom/testdata/custom-certs/root-cert.pem",
+			serverCert:   "../../pki/custom/testdata/custom-certs/server-cert.pem",
+			serverKey:    "../../pki/custom/testdata/custom-certs/server-key.pem",
+			clientCert:   "../../pki/custom/testdata/custom-certs/client-cert.pem",
+			clientKey:    "../../pki/custom/testdata/custom-certs/client-key.pem",
+			workloadCert: "../../pki/custom/testdata/custom-ecc-certs/workload-cert-chain.pem",
+		},
+		"ECC cert": {
+			rootCert:     "../../pki/custom/testdata/custom-ecc-certs/root-cert.pem",
+			serverCert:   "../../pki/custom/testdata/custom-ecc-certs/server-cert.pem",
+			serverKey:    "../../pki/custom/testdata/custom-ecc-certs/server-key.pem",
+			clientCert:   "../../pki/custom/testdata/custom-ecc-certs/client-cert.pem",
+			clientKey:    "../../pki/custom/testdata/custom-ecc-certs/client-key.pem",
+			workloadCert: "../../pki/custom/testdata/custom-ecc-certs/workload-cert-chain.pem",
+		},
+	}
+
+	caCertTTL := time.Hour
+	defaultCertTTL := 30 * time.Minute
+	maxCertTTL := time.Hour
+	org := "custom.ca.Org"
+	const caNamespace = "default"
+	client := fake.NewSimpleClientset()
+	rootCertCheckInverval := time.Hour
+	rsaKeySize := 2048
+
+	for id, tc := range cases {
+		t.Run(id, func(tsub *testing.T) {
+			g := NewWithT(tsub)
+
+			fakeServer, err := mock.NewFakeExternalCA(tc.serverCert, tc.serverKey, tc.rootCert, tc.workloadCert)
+			g.Expect(err).To(BeNil())
+
+			addr, err := fakeServer.Serve()
+			g.Expect(err).To(BeNil())
+			defer fakeServer.Stop()
+
+			caopts, err := ca.NewSelfSignedIstioCAOptions(context.Background(),
+				0, caCertTTL, rootCertCheckInverval, defaultCertTTL,
+				maxCertTTL, org, false, caNamespace, -1, client.CoreV1(),
+				tc.rootCert, false, rsaKeySize)
+
+			ca, err := ca.NewIstioCA(caopts)
+			g.Expect(err).To(BeNil())
+
+			rootCertPool := x509.NewCertPool()
+			ok := rootCertPool.AppendCertsFromPEM(caopts.KeyCertBundle.GetRootCertPem())
+			g.Expect(ok).To(Equal(true))
+			// Expect KeyCertBundle should contains 2 rootCAs: one from Custom RootCert, one self generate
+			g.Expect(rootCertPool.Subjects()).To(HaveLen(2), "expect KeyCertBundle should contains 2 rootCAs")
+
+			server, err := New(ca, time.Hour, false, []string{"localhost"}, 0,
+				"testdomain.com", true, jwt.PolicyThirdParty, "kubernetes")
+			server.Authenticators = []authenticate.Authenticator{&mockAuthenticator{}}
+			g.Expect(err).To(BeNil())
+
+			c, err := customca.NewCAClient(&customca.CAClientOpts{
+				CAAddr:         addr.String(),
+				KeyCertBundle:  caopts.KeyCertBundle,
+				RootCertPath:   tc.rootCert,
+				ClientCertPath: tc.clientCert,
+				ClientKeyPath:  tc.clientKey,
+				RequestTimeout: 5,
+			})
+			g.Expect(err).To(BeNil())
+			server.CustomCAClient = c
+
+			cert, err := server.getServerCertificate()
+			g.Expect(err).To(BeNil(), "get server certificate should run successfully")
+			g.Expect(cert.Certificate).To(HaveLen(1), "should contain 1 self generated cert")
+
+			err = server.Run()
+			g.Expect(err).To(BeNil(), "start server should successful")
+
+			certChain, err := server.CreateCertificate(context.TODO(), &pb.IstioCertificateRequest{
+				Csr:              "FAKE_CSR",
+				ValidityDuration: 10000,
+			})
+			g.Expect(err).To(BeNil(), "should create certificate successful")
+			g.Expect(certChain.GetCertChain()).To(HaveLen(2), "create certificate should response 2 certs")
+
+			rootCerts := string(caopts.KeyCertBundle.GetRootCertPem())
+			g.Expect(certChain.GetCertChain()[len(certChain.GetCertChain())-1]).To(Equal(rootCerts),
+				"expect root-certs response should contains 2 rootCAs")
+		})
+
 	}
 }

@@ -96,6 +96,43 @@ openssl genrsa -out istio-ecc-certs/workload-key.pem 2048
 openssl req -new -key istio-ecc-certs/workload-key.pem -out istio-ecc-certs/workload.csr -config istio.cfg -batch -sha256
 openssl x509 -req -days 365000 -in istio-ecc-certs/workload.csr -sha256 -CA istio-ecc-certs/root-cert.pem -CAkey istio-ecc-certs/root-key.pem -CAcreateserial -out istio-ecc-certs/workload-cert.pem -extensions v3_req -extfile istio.cfg
 
+
+
+# ----------------------
+# Custom External CA with ECC certificates
+# ----------------------
+openssl ecparam -genkey -name prime256v1 -out custom-ecc-certs/root-key.pem -noout
+openssl req -new -key custom-ecc-certs/root-key.pem -out custom-ecc-certs/root.csr -sha256 <<EOF
+US
+California
+Sunnyvale
+Istio
+Test
+ECC Root CA
+test@istio.io
+
+
+EOF
+openssl x509 -req -days 365000 -in custom-ecc-certs/root.csr -sha256 -signkey custom-ecc-certs/root-key.pem -out custom-ecc-certs/root-cert.pem
+
+# Server TLS
+openssl ecparam -genkey -name prime256v1 -out custom-ecc-certs/server-key.pem -noout
+openssl req -new -key custom-ecc-certs/server-key.pem -out custom-ecc-certs/server.csr -config custom.cfg -batch -sha256
+openssl x509 -req -days 365000 -in custom-ecc-certs/server.csr -sha256 -CA custom-ecc-certs/root-cert.pem -CAkey custom-ecc-certs/root-key.pem -CAcreateserial -out custom-ecc-certs/server-cert.pem -extensions v3_req -extfile custom.cfg
+
+# Client TLS
+openssl ecparam -genkey -name prime256v1 -out custom-ecc-certs/client-key.pem -noout
+openssl req -new -key custom-ecc-certs/client-key.pem -out custom-ecc-certs/client.csr -config custom.cfg -batch -sha256
+openssl x509 -req -days 365000 -in custom-ecc-certs/client.csr -sha256 -CA custom-ecc-certs/root-cert.pem -CAkey custom-ecc-certs/root-key.pem -CAcreateserial -out custom-ecc-certs/client-cert.pem -extensions v3_req -extfile custom.cfg
+
+# Workload Cert
+openssl ecparam -genkey -name prime256v1 -out custom-ecc-certs/workload-key.pem -noout
+openssl req -new -key custom-ecc-certs/workload-key.pem -out custom-ecc-certs/workload-cert.csr -config custom.cfg -batch -sha256
+openssl x509 -req -days 365000 -in custom-ecc-certs/workload-cert.csr -sha256 -CA custom-ecc-certs/root-cert.pem -CAkey custom-ecc-certs/root-key.pem -CAcreateserial -out custom-ecc-certs/workload-cert.pem -extensions v3_req -extfile custom.cfg
+
+cat custom-ecc-certs/root-cert.pem > custom-ecc-certs/workload-cert-chain.pem
+cat custom-ecc-certs/workload-cert.pem >> custom-ecc-certs/workload-cert-chain.pem
+
 # -------------
 # MIXING ROOT
 # --------------

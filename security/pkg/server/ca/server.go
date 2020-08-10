@@ -103,7 +103,6 @@ func (s *Server) CreateCertificate(ctx context.Context, request *pb.IstioCertifi
 	// Forward request to Custom CA address
 	if s.CustomCAClient != nil {
 		response, err := s.CustomCAClient.CreateCertificate(ctx, request)
-		serverCaLog.Infof("CustomCAClient response: \n%v", response)
 
 		if err != nil {
 			errMsg := fmt.Sprintf("Forward request to Custom CA error (%v)", err)

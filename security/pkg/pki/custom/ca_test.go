@@ -32,8 +32,11 @@ func TestCreateCustomCAClient(t *testing.T) {
 	g := NewWithT(t)
 	fakeServer, err := mock.NewFakeExternalCA(customServerCert, customServerKey, customRootCert, customWorkloadCert)
 	g.Expect(err).To(BeNil())
+
 	addr, err := fakeServer.Serve()
 	g.Expect(err).To(BeNil())
+	defer fakeServer.Stop()
+
 	keyCertBundle, err := certutil.NewKeyCertBundleWithRootCertFromFile(mixingRootCerts)
 	g.Expect(err).ShouldNot(HaveOccurred())
 	testCases := map[string]struct {
